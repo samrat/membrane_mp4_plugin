@@ -345,6 +345,8 @@ defmodule Membrane.MP4.Muxer.CMAF do
     # In case DTS is not set, use PTS. This is the case for audio tracks or H264 originated
     # from an RTP stream. ISO base media file format specification uses DTS for calculating
     # decoding deltas, and so is the implementation of sample table in this plugin.
+    IO.inspect(sample, label: "cmaf input sample")
+    IO.inspect(Buffer.get_dts_or_pts(sample), label: "cmaf input dts")
     sample = %Buffer{sample | dts: Buffer.get_dts_or_pts(sample)}
 
     {sample, state} =
@@ -562,7 +564,8 @@ defmodule Membrane.MP4.Muxer.CMAF do
         sample_duration:
           sample.metadata.duration
           |> Helper.timescalify(timescale)
-          |> Ratio.trunc(),
+          |> Ratio.trunc()
+          |> IO.inspect(label: "cmaf sample duration"),
         sample_composition_offset: Helper.timescalify(sample.pts - sample.dts, timescale)
       }
     end)
@@ -722,16 +725,23 @@ defmodule Membrane.MP4.Muxer.CMAF do
     if is_nil(prev_sample) do
       {nil, put_in(state, [:pad_to_track_data, pad, :buffer_awaiting_duration], sample)}
     else
+      IO.inspect(sample, label: "cmaf sample")
+      IO.inspect(prev_sample, label: "cmaf prev_sample")
       duration = Ratio.to_float(sample.dts - prev_sample.dts)
-      prev_sample_metadata = Map.put(prev_sample.metadata, :duration, duration)
-      prev_sample = %Buffer{prev_sample | metadata: prev_sample_metadata}
 
-      state =
-        state
-        |> put_in([:pad_to_track_data, pad, :end_timestamp], prev_sample.dts)
-        |> put_in([:pad_to_track_data, pad, :buffer_awaiting_duration], sample)
+      if duration < 0 do
+        {nil, put_in(state, [:pad_to_track_data, pad, :buffer_awaiting_duration], sample)}
+      else
+        prev_sample_metadata = Map.put(prev_sample.metadata, :duration, duration)
+        prev_sample = %Buffer{prev_sample | metadata: prev_sample_metadata}
 
-      {prev_sample, state}
+        state =
+          state
+          |> put_in([:pad_to_track_data, pad, :end_timestamp], prev_sample.dts)
+          |> put_in([:pad_to_track_data, pad, :buffer_awaiting_duration], sample)
+
+        {prev_sample, state}
+      end
     end
   end
 
