@@ -729,19 +729,18 @@ defmodule Membrane.MP4.Muxer.CMAF do
       IO.inspect(prev_sample, label: "cmaf prev_sample")
       duration = Ratio.to_float(sample.dts - prev_sample.dts)
 
-      if duration < 0 do
-        {nil, put_in(state, [:pad_to_track_data, pad, :buffer_awaiting_duration], sample)}
-      else
-        prev_sample_metadata = Map.put(prev_sample.metadata, :duration, duration)
-        prev_sample = %Buffer{prev_sample | metadata: prev_sample_metadata}
+      # Handle negative duration by setting it to a small positive value or zero
+      adjusted_duration = if duration < 0, do: 0, else: duration
 
-        state =
-          state
-          |> put_in([:pad_to_track_data, pad, :end_timestamp], prev_sample.dts)
-          |> put_in([:pad_to_track_data, pad, :buffer_awaiting_duration], sample)
+      prev_sample_metadata = Map.put(prev_sample.metadata, :duration, adjusted_duration)
+      prev_sample = %Buffer{prev_sample | metadata: prev_sample_metadata}
 
-        {prev_sample, state}
-      end
+      state =
+        state
+        |> put_in([:pad_to_track_data, pad, :end_timestamp], prev_sample.dts)
+        |> put_in([:pad_to_track_data, pad, :buffer_awaiting_duration], sample)
+
+      {prev_sample, state}
     end
   end
 
